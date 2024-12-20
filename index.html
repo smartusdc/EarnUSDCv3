@@ -19,6 +19,7 @@
         </div>
       </div>
     </div>
+
     <script>
       const CONTRACT_ADDRESS = '0x9cf81A1814D452D4f5308aA38D128ce5CAADdDE4';
       const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -68,69 +69,26 @@
       let contract;
       let usdcContract;
       let currentAccount = '';
+      
       let state = {
         balance: '0',
         apr: '0',
         referralCode: '',
         withdrawRequested: false,
         depositReward: '0',
-        referralReward: '0'
+        referralReward: '0',
+        isWalletConnected: false,
+        needsReferralCode: false
       };
 
       async function getBaseGasPrice() {
         try {
           const gasPrice = await web3.eth.getGasPrice();
           console.log('Current gas price:', gasPrice);
-          return Math.max(Math.floor(Number(gasPrice) / 10), 100);
+          return Math.max(Math.floor(Number(gasPrice) * 1.1), 100);
         } catch (error) {
           console.error('Gas price fetch error:', error);
           return '100';
-        }
-      }
-
-async function loadReferralCode() {
-  if (!currentAccount || !contract) return;
-
-  try {
-    // スマートコントラクトから既存のリファラル情報を取得
-    const userReferral = await contract.methods.userReferrals(currentAccount).call();
-    
-    if (userReferral.exists && userReferral.referralCode !== '0') {
-      // 既存のリファラルコードを使用
-      state.referralCode = userReferral.referralCode;
-      renderUI();
-    } else {
-      // 新規コード生成が必要な場合は、ユーザーに確認を求める
-      if (confirm('リファラルコードを生成する必要があります。続行しますか？')) {
-        const gasPrice = await getBaseGasPrice();
-        const tx = await contract.methods.generateReferralCode()
-          .send({ 
-            from: currentAccount,
-            gasPrice: gasPrice
-          });
-        
-        // トランザクション完了後に再度リファラル情報を取得
-        const updatedReferral = await contract.methods.userReferrals(currentAccount).call();
-        state.referralCode = updatedReferral.referralCode;
-        renderUI();
-      }
-    }
-  } catch (error) {
-    console.error('リファラルコード取得エラー:', error);
-    showAlert('リファラルコードの取得に失敗しました。後でもう一度お試しください。', 'error');
-  }
-}
-
-      async function connectWallet() {
-        try {
-          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-          currentAccount = accounts[0];
-          await initContract();
-          await loadReferralCode();
-          await updateUI();
-          showAlert('ウォレットを接続しました', 'success');
-        } catch (error) {
-          showAlert('ウォレット接続に失敗しました', 'error');
         }
       }
 
@@ -140,16 +98,79 @@ async function loadReferralCode() {
         usdcContract = new web3.eth.Contract(USDC_ABI, USDC_ADDRESS);
       }
 
-async function updateUI() {
-  if (!currentAccount) return;
+      async function connectWallet() {
+        try {
+          if (typeof window.ethereum === 'undefined') {
+            showAlert('MetaMaskをインストールしてください', 'error');
+            return;
+          }
 
-  try {
-const [
-            balance, 
-            apr, 
-            depositReward,
-            referralReward
-          ] = await Promise.all([
+          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+          if (!accounts || accounts.length === 0) {
+            throw new Error('ウォレットの接続が許可されませんでした');
+          }
+
+          currentAccount = accounts[0];
+          state.isWalletConnected = true;
+          await initContract();
+          await checkReferralCode();
+          await updateUI();
+          showAlert('ウォレットを接続しました', 'success');
+        } catch (error) {
+          console.error('Wallet connection error:', error);
+          showAlert('ウォレット接続に失敗しました: ' + (error.message || 'エラーが発生しました'), 'error');
+          state.isWalletConnected = false;
+          currentAccount = '';
+        }
+      }
+
+      async function checkReferralCode() {
+        if (!currentAccount || !contract) return;
+
+        try {
+          const userReferral = await contract.methods.userReferrals(currentAccount).call();
+          if (userReferral.exists && userReferral.referralCode !== '0') {
+            state.referralCode = userReferral.referralCode;
+            state.needsReferralCode = false;
+          } else {
+            state.needsReferralCode = true;
+          }
+          renderUI();
+        } catch (error) {
+          console.error('リファラルコード確認エラー:', error);
+          showAlert('リファラルコード確認に失敗しました', 'error');
+        }
+      }
+
+      async function generateReferralCode() {
+        try {
+          const gasPrice = await getBaseGasPrice();
+          showAlert('リファラルコード生成中...', 'info');
+          
+          const tx = await contract.methods.generateReferralCode()
+            .send({ 
+              from: currentAccount,
+              gasPrice: gasPrice
+            });
+
+          if (tx.status) {
+            const userReferral = await contract.methods.userReferrals(currentAccount).call();
+            state.referralCode = userReferral.referralCode;
+            state.needsReferralCode = false;
+            showAlert('リファラルコードが生成されました', 'success');
+          }
+          renderUI();
+        } catch (error) {
+          console.error('リファラルコード生成エラー:', error);
+          showAlert('リファラルコード生成に失敗しました', 'error');
+        }
+      }
+
+      async function updateUI() {
+        if (!currentAccount) return;
+
+        try {
+          const [balance, apr, depositReward, referralReward] = await Promise.all([
             contract.methods.deposits(currentAccount).call(),
             contract.methods.currentAPR().call(),
             contract.methods.calculateReward(currentAccount).call(),
@@ -168,52 +189,6 @@ const [
         } catch (error) {
           console.error('更新エラー:', error);
         }
-      }
-
-      async function handleClaimDepositReward() {
-        try {
-          const gasPrice = await getBaseGasPrice();
-          await contract.methods.claimDepositReward()
-            .send({ 
-              from: currentAccount,
-              gasPrice: gasPrice
-            });
-          showAlert('預入報酬を請求しました', 'success');
-          await updateUI();
-        } catch (error) {
-          showAlert('預入報酬の請求に失敗しました', 'error');
-        }
-      }
-
-      async function handleClaimReferralReward() {
-        try {
-          const gasPrice = await getBaseGasPrice();
-          await contract.methods.claimReferralReward()
-            .send({ 
-              from: currentAccount,
-              gasPrice: gasPrice
-            });
-          showAlert('リファラル報酬を請求しました', 'success');
-          await updateUI();
-        } catch (error) {
-          showAlert('リファラル報酬の請求に失敗しました', 'error');
-        }
-      }
-
-      function showAlert(message, type = 'info') {
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `mb-4 p-4 rounded-lg ${
-          type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-        }`;
-        alertDiv.textContent = message;
-        
-        const existingAlert = document.querySelector('.alert');
-        if (existingAlert) existingAlert.remove();
-        
-        document.getElementById('mainContent').prepend(alertDiv);
-        alertDiv.classList.add('alert');
-        
-        setTimeout(() => alertDiv.remove(), 5000);
       }
 
       async function handleDeposit() {
@@ -296,9 +271,55 @@ const [
         }
       }
 
+      async function handleClaimDepositReward() {
+        try {
+          const gasPrice = await getBaseGasPrice();
+          await contract.methods.claimDepositReward()
+            .send({ 
+              from: currentAccount,
+              gasPrice: gasPrice
+            });
+          showAlert('預入報酬を請求しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('預入報酬の請求に失敗しました', 'error');
+        }
+      }
+
+      async function handleClaimReferralReward() {
+        try {
+          const gasPrice = await getBaseGasPrice();
+          await contract.methods.claimReferralReward()
+            .send({ 
+              from: currentAccount,
+              gasPrice: gasPrice
+            });
+          showAlert('リファラル報酬を請求しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('リファラル報酬の請求に失敗しました', 'error');
+        }
+      }
+
       function copyReferralCode() {
         navigator.clipboard.writeText(state.referralCode);
-        showAlert('コピーしました');
+        showAlert('コピーしました', 'success');
+      }
+
+      function showAlert(message, type = 'info') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `mb-4 p-4 rounded-lg ${
+          type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+        }`;
+        alertDiv.textContent = message;
+        
+        const existingAlert = document.querySelector('.alert');
+        if (existingAlert) existingAlert.remove();
+        
+        document.getElementById('mainContent').prepend(alertDiv);
+        alertDiv.classList.add('alert');
+        
+        setTimeout(() => alertDiv.remove(), 5000);
       }
 
       function renderUI() {
@@ -317,11 +338,20 @@ const [
           <div class="p-4 bg-gray-50 rounded-lg flex items-center justify-between mb-4">
             <div>
               <div class="text-sm text-gray-500">リファラルコード</div>
-              <div class="text-xl font-mono">${state.referralCode}</div>
+              ${state.needsReferralCode ? `
+                <button 
+                  onclick="generateReferralCode()"
+                  class="mt-2 bg-blue-500 text-white rounded-lg px-4 py-2"
+                >
+                  リファラルコードを生成
+                </button>
+              ` : `
+                <div class="text-xl font-mono">${state.referralCode}</div>
+                <button onclick="copyReferralCode()" class="p-2 hover:bg-gray-200 rounded">
+                  <i data-lucide="clipboard" class="w-4 h-4"></i>
+                </button>
+              `}
             </div>
-            <button onclick="copyReferralCode()" class="p-2 hover:bg-gray-200 rounded">
-              <i data-lucide="clipboard" class="w-4 h-4"></i>
-            </button>
           </div>
 
           <div class="grid grid-cols-2 gap-4 mb-4">
