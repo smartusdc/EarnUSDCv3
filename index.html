@@ -265,44 +265,57 @@ async function handleDeposit() {
   }
 }
 
-      async function handleWithdrawRequest() {
-        if (!contract) return;
-        
-        const amount = document.getElementById('withdrawAmount').value;
-        
-        try {
-          await contract.methods.requestWithdrawal(
-            web3.utils.toWei(amount, 'mwei')
-          ).send({ from: currentAccount });
-          
-          state.withdrawRequested = true;
-          showAlert('引き出しリクエストを送信しました', 'success');
-          renderUI();
-        } catch (error) {
-          showAlert('リクエストに失敗しました', 'error');
-        }
-      }
+async function handleWithdrawRequest() {
+  if (!contract) return;
+  
+  const amount = document.getElementById('withdrawAmount').value;
+  
+  try {
+    await contract.methods.requestWithdrawal(web3.utils.toWei(amount, 'mwei'))
+      .send({ 
+        from: currentAccount,
+        maxPriorityFeePerGas: null,
+        maxFeePerGas: null 
+      });
+    
+    state.withdrawRequested = true;
+    showAlert('引き出しリクエストを送信しました', 'success');
+    renderUI();
+  } catch (error) {
+    showAlert('リクエストに失敗しました', 'error');
+  }
+}
 
-      async function handleWithdraw() {
-        try {
-          await contract.methods.withdraw().send({ from: currentAccount });
-          state.withdrawRequested = false;
-          showAlert('引き出しが完了しました', 'success');
-          await updateUI();
-        } catch (error) {
-          showAlert('引き出しに失敗しました', 'error');
-        }
-      }
+async function handleWithdraw() {
+  try {
+    await contract.methods.withdraw()
+      .send({ 
+        from: currentAccount,
+        maxPriorityFeePerGas: null,
+        maxFeePerGas: null 
+      });
+    state.withdrawRequested = false;
+    showAlert('引き出しが完了しました', 'success');
+    await updateUI();
+  } catch (error) {
+    showAlert('引き出しに失敗しました', 'error');
+  }
+}
 
-      async function handleClaim() {
-        try {
-          await contract.methods.claimDepositReward().send({ from: currentAccount });
-          showAlert('報酬を請求しました', 'success');
-          await updateUI();
-        } catch (error) {
-          showAlert('報酬請求に失敗しました', 'error');
-        }
-      }
+async function handleClaim() {
+  try {
+    await contract.methods.claimDepositReward()
+      .send({ 
+        from: currentAccount,
+        maxPriorityFeePerGas: null,
+        maxFeePerGas: null 
+      });
+    showAlert('報酬を請求しました', 'success');
+    await updateUI();
+  } catch (error) {
+    showAlert('報酬請求に失敗しました', 'error');
+  }
+}
 
       function copyReferralCode() {
         navigator.clipboard.writeText(state.referralCode);
