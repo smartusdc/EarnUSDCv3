@@ -75,11 +75,10 @@
         try {
           const gasPrice = await web3.eth.getGasPrice();
           console.log('Current gas price:', gasPrice);
-          // Base chainの標準的なガス価格に調整（現在のガス価格の1/10）
           return Math.max(Math.floor(Number(gasPrice) / 10), 100);
         } catch (error) {
           console.error('Gas price fetch error:', error);
-          return '100';  // フォールバック値: 最小値
+          return '100';
         }
       }
 
@@ -89,6 +88,7 @@
           currentAccount = accounts[0];
           await initContract();
           await updateUI();
+          await generateReferralCodeIfNeeded();
           showAlert('ウォレットを接続しました', 'success');
         } catch (error) {
           showAlert('ウォレット接続に失敗しました', 'error');
@@ -101,21 +101,31 @@
         usdcContract = new web3.eth.Contract(USDC_ABI, USDC_ADDRESS);
       }
 
+      async function generateReferralCodeIfNeeded() {
+        if (!currentAccount || state.referralCode) return;
+
+        try {
+          const code = await contract.methods.generateReferralCode().call({ from: currentAccount });
+          state.referralCode = code;
+          renderUI();
+        } catch (error) {
+          console.error('リファラルコード生成エラー:', error);
+        }
+      }
+
       async function updateUI() {
         if (!currentAccount) return;
 
         try {
-          const [balance, apr, code] = await Promise.all([
+          const [balance, apr] = await Promise.all([
             contract.methods.deposits(currentAccount).call(),
             contract.methods.currentAPR().call(),
-            contract.methods.generateReferralCode().call({ from: currentAccount })
           ]);
 
           state = {
             ...state,
             balance: (balance / 1e6).toFixed(2),
-            apr,
-            referralCode: code
+            apr
           };
 
           renderUI();
