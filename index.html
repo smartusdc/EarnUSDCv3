@@ -30,7 +30,11 @@
         {"inputs":[],"name":"currentAPR","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
         {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"requestWithdrawal","outputs":[],"stateMutability":"nonpayable","type":"function"},
         {"inputs":[],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
-        {"inputs":[],"name":"claimDepositReward","outputs":[],"stateMutability":"nonpayable","type":"function"}
+        {"inputs":[],"name":"claimDepositReward","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"claimReferralReward","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"userReferrals","outputs":[{"internalType":"address","name":"referrer","type":"address"},{"internalType":"uint256","name":"referralCode","type":"uint256"},{"internalType":"bool","name":"exists","type":"bool"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"address","name":"userAddress","type":"address"}],"name":"calculateReward","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"referralRewards","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
       ];
 
       const USDC_ABI = [
@@ -68,7 +72,9 @@
         balance: '0',
         apr: '0',
         referralCode: '',
-        withdrawRequested: false
+        withdrawRequested: false,
+        depositReward: '0',
+        referralReward: '0'
       };
 
       async function getBaseGasPrice() {
@@ -82,13 +88,45 @@
         }
       }
 
+      async function loadReferralCode() {
+        if (!currentAccount || !contract) return;
+
+        try {
+          // スマートコントラクトから既存のリファラル情報を取得
+          const userReferral = await contract.methods.userReferrals(currentAccount).call();
+          
+          if (userReferral.exists) {
+            // 既存のリファラルコードを使用
+            state.referralCode = userReferral.referralCode;
+          } else {
+            // 新規コード生成
+            const tx = await contract.methods.generateReferralCode()
+              .send({ 
+                from: currentAccount,
+                gasPrice: await getBaseGasPrice()
+              });
+            
+            const receipt = await web3.eth.getTransactionReceipt(tx.transactionHash);
+            if (receipt) {
+              const userReferral = await contract.methods.userReferrals(currentAccount).call();
+              state.referralCode = userReferral.referralCode;
+            }
+          }
+          
+          renderUI();
+        } catch (error) {
+          console.error('リファラルコード取得エラー:', error);
+          showAlert('リファラルコードの取得に失敗しました', 'error');
+        }
+      }
+
       async function connectWallet() {
         try {
           const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
           currentAccount = accounts[0];
           await initContract();
+          await loadReferralCode();
           await updateUI();
-          await generateReferralCodeIfNeeded();
           showAlert('ウォレットを接続しました', 'success');
         } catch (error) {
           showAlert('ウォレット接続に失敗しました', 'error');
@@ -101,36 +139,63 @@
         usdcContract = new web3.eth.Contract(USDC_ABI, USDC_ADDRESS);
       }
 
-      async function generateReferralCodeIfNeeded() {
-        if (!currentAccount || state.referralCode) return;
+async function updateUI() {
+  if (!currentAccount) return;
 
-        try {
-          const code = await contract.methods.generateReferralCode().call({ from: currentAccount });
-          state.referralCode = code;
-          renderUI();
-        } catch (error) {
-          console.error('リファラルコード生成エラー:', error);
-        }
-      }
-
-      async function updateUI() {
-        if (!currentAccount) return;
-
-        try {
-          const [balance, apr] = await Promise.all([
+  try {
+const [
+            balance, 
+            apr, 
+            depositReward,
+            referralReward
+          ] = await Promise.all([
             contract.methods.deposits(currentAccount).call(),
             contract.methods.currentAPR().call(),
+            contract.methods.calculateReward(currentAccount).call(),
+            contract.methods.referralRewards(currentAccount).call()
           ]);
 
           state = {
             ...state,
             balance: (balance / 1e6).toFixed(2),
-            apr
+            apr,
+            depositReward: (depositReward / 1e6).toFixed(2),
+            referralReward: (referralReward / 1e6).toFixed(2)
           };
 
           renderUI();
         } catch (error) {
           console.error('更新エラー:', error);
+        }
+      }
+
+      async function handleClaimDepositReward() {
+        try {
+          const gasPrice = await getBaseGasPrice();
+          await contract.methods.claimDepositReward()
+            .send({ 
+              from: currentAccount,
+              gasPrice: gasPrice
+            });
+          showAlert('預入報酬を請求しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('預入報酬の請求に失敗しました', 'error');
+        }
+      }
+
+      async function handleClaimReferralReward() {
+        try {
+          const gasPrice = await getBaseGasPrice();
+          await contract.methods.claimReferralReward()
+            .send({ 
+              from: currentAccount,
+              gasPrice: gasPrice
+            });
+          showAlert('リファラル報酬を請求しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('リファラル報酬の請求に失敗しました', 'error');
         }
       }
 
@@ -148,96 +213,6 @@
         alertDiv.classList.add('alert');
         
         setTimeout(() => alertDiv.remove(), 5000);
-      }
-
-      function renderUI() {
-        const content = currentAccount ? `
-          <div class="grid grid-cols-2 gap-4 mb-4">
-            <div class="p-4 bg-gray-50 rounded-lg">
-              <div class="text-sm text-gray-500">預入残高</div>
-              <div class="text-2xl font-bold">${state.balance} USDC</div>
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg">
-              <div class="text-sm text-gray-500">現在のAPR</div>
-              <div class="text-2xl font-bold">${state.apr}%</div>
-            </div>
-          </div>
-
-          <div class="p-4 bg-gray-50 rounded-lg flex items-center justify-between mb-4">
-            <div>
-              <div class="text-sm text-gray-500">リファラルコード</div>
-              <div class="text-xl font-mono">${state.referralCode}</div>
-            </div>
-            <button onclick="copyReferralCode()" class="p-2 hover:bg-gray-200 rounded">
-              <i data-lucide="clipboard" class="w-4 h-4"></i>
-            </button>
-          </div>
-
-          <div class="space-y-4">
-            <div>
-              <input
-                type="number"
-                placeholder="預入額 (USDC)"
-                id="depositAmount"
-                class="w-full p-2 border rounded mb-2"
-              />
-              <input
-                type="number"
-                placeholder="リファラルコード (オプション)"
-                id="referralCode"
-                class="w-full p-2 border rounded mb-2"
-              />
-              <button 
-                onclick="handleDeposit()"
-                class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
-              >
-                預け入れ
-              </button>
-            </div>
-
-            <div>
-              ${state.withdrawRequested ? `
-                <button 
-                  onclick="handleWithdraw()"
-                  class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
-                >
-                  引き出しを実行
-                </button>
-              ` : `
-                <input
-                  type="number"
-                  placeholder="引出額 (USDC)"
-                  id="withdrawAmount"
-                  class="w-full p-2 border rounded mb-2"
-                />
-                <button 
-                  onclick="handleWithdrawRequest()"
-                  class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
-                >
-                  引き出しをリクエスト
-                </button>
-              `}
-            </div>
-
-            <button 
-              onclick="handleClaim()"
-              class="w-full border border-gray-300 rounded-lg px-4 py-2"
-            >
-              報酬を請求
-            </button>
-          </div>
-        ` : `
-          <button 
-            onclick="connectWallet()"
-            class="w-full bg-blue-500 text-white rounded-lg px-4 py-2 flex items-center justify-center"
-          >
-            <i data-lucide="wallet" class="w-4 h-4 mr-2"></i>
-            ウォレットを接続
-          </button>
-        `;
-
-        document.getElementById('mainContent').innerHTML = content;
-        lucide.createIcons();
       }
 
       async function handleDeposit() {
@@ -320,24 +295,119 @@
         }
       }
 
-      async function handleClaim() {
-        try {
-          const gasPrice = await getBaseGasPrice();
-          await contract.methods.claimDepositReward()
-            .send({ 
-              from: currentAccount,
-              gasPrice: gasPrice
-            });
-          showAlert('報酬を請求しました', 'success');
-          await updateUI();
-        } catch (error) {
-          showAlert('報酬請求に失敗しました', 'error');
-        }
-      }
-
       function copyReferralCode() {
         navigator.clipboard.writeText(state.referralCode);
         showAlert('コピーしました');
+      }
+
+      function renderUI() {
+        const content = currentAccount ? `
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="p-4 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-500">預入残高</div>
+              <div class="text-2xl font-bold">${state.balance} USDC</div>
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-500">現在のAPR</div>
+              <div class="text-2xl font-bold">${state.apr}%</div>
+            </div>
+          </div>
+
+          <div class="p-4 bg-gray-50 rounded-lg flex items-center justify-between mb-4">
+            <div>
+              <div class="text-sm text-gray-500">リファラルコード</div>
+              <div class="text-xl font-mono">${state.referralCode}</div>
+            </div>
+            <button onclick="copyReferralCode()" class="p-2 hover:bg-gray-200 rounded">
+              <i data-lucide="clipboard" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="p-4 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-500">預入報酬</div>
+              <div class="text-2xl font-bold">${state.depositReward} USDC</div>
+              ${Number(state.depositReward) > 0 ? `
+                <button 
+                  onclick="handleClaimDepositReward()"
+                  class="mt-2 w-full bg-green-500 text-white rounded-lg px-4 py-2"
+                >
+                  預入報酬を請求
+                </button>
+              ` : ''}
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-500">リファラル報酬</div>
+              <div class="text-2xl font-bold">${state.referralReward} USDC</div>
+              ${Number(state.referralReward) > 0 ? `
+                <button 
+                  onclick="handleClaimReferralReward()"
+                  class="mt-2 w-full bg-green-500 text-white rounded-lg px-4 py-2"
+                >
+                  リファラル報酬を請求
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <input
+                type="number"
+                placeholder="預入額 (USDC)"
+                id="depositAmount"
+                class="w-full p-2 border rounded mb-2"
+              />
+              <input
+                type="number"
+                placeholder="リファラルコード (オプション)"
+                id="referralCode"
+                class="w-full p-2 border rounded mb-2"
+              />
+              <button 
+                onclick="handleDeposit()"
+                class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
+              >
+                預け入れ
+              </button>
+            </div>
+
+            <div>
+              ${state.withdrawRequested ? `
+                <button 
+                  onclick="handleWithdraw()"
+                  class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
+                >
+                  引き出しを実行
+                </button>
+              ` : `
+                <input
+                  type="number"
+                  placeholder="引出額 (USDC)"
+                  id="withdrawAmount"
+                  class="w-full p-2 border rounded mb-2"
+                />
+                <button 
+                  onclick="handleWithdrawRequest()"
+                  class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
+                >
+                  引き出しをリクエスト
+                </button>
+              `}
+            </div>
+          </div>
+        ` : `
+          <button 
+            onclick="connectWallet()"
+            class="w-full bg-blue-500 text-white rounded-lg px-4 py-2 flex items-center justify-center"
+          >
+            <i data-lucide="wallet" class="w-4 h-4 mr-2"></i>
+            ウォレットを接続
+          </button>
+        `;
+
+        document.getElementById('mainContent').innerHTML = content;
+        lucide.createIcons();
       }
 
       // 初期レンダリング
