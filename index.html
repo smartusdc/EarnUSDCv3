@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EarnUSDC on Base</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.8.2/web3.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body>
+    <div id="root">
+      <div class="min-h-screen bg-gray-50 py-8">
+        <div class="max-w-4xl mx-auto px-4">
+          <div class="bg-white rounded-xl shadow-lg p-6">
+            <h1 class="text-2xl font-bold mb-1">EarnUSDC on Base</h1>
+            <div id="mainContent"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // メインのアプリケーションコード
+      const CONTRACT_ADDRESS = '0x9cf81A1814D452D4f5308aA38D128ce5CAADdDE4';
+      const CONTRACT_ABI = [
+        {"inputs":[],"name":"generateReferralCode","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"referralCode","type":"uint256"}],"name":"depositFunds","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"deposits","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"currentAPR","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"requestWithdrawal","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"claimDepositReward","outputs":[],"stateMutability":"nonpayable","type":"function"}
+      ];
+
+      let web3;
+      let contract;
+      let currentAccount = '';
+      let state = {
+        balance: '0',
+        apr: '0',
+        referralCode: '',
+        withdrawRequested: false
+      };
+
+      async function connectWallet() {
+        try {
+          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+          currentAccount = accounts[0];
+          await initContract();
+          await updateUI();
+          showAlert('ウォレットを接続しました', 'success');
+        } catch (error) {
+          showAlert('ウォレット接続に失敗しました', 'error');
+        }
+      }
+
+      async function initContract() {
+        web3 = new Web3(window.ethereum);
+        contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
+      }
+
+      async function updateUI() {
+        if (!currentAccount) return;
+
+        try {
+          const [balance, apr, code] = await Promise.all([
+            contract.methods.deposits(currentAccount).call(),
+            contract.methods.currentAPR().call(),
+            contract.methods.generateReferralCode().call({ from: currentAccount })
+          ]);
+
+          state = {
+            ...state,
+            balance: (balance / 1e6).toFixed(2),
+            apr,
+            referralCode: code
+          };
+
+          renderUI();
+        } catch (error) {
+          console.error('更新エラー:', error);
+        }
+      }
+
+      function showAlert(message, type = 'info') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `mb-4 p-4 rounded-lg ${
+          type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+        }`;
+        alertDiv.textContent = message;
+        
+        const existingAlert = document.querySelector('.alert');
+        if (existingAlert) existingAlert.remove();
+        
+        document.getElementById('mainContent').prepend(alertDiv);
+        alertDiv.classList.add('alert');
+        
+        setTimeout(() => alertDiv.remove(), 5000);
+      }
+
+      function renderUI() {
+        const content = currentAccount ? `
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="p-4 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-500">預入残高</div>
+              <div class="text-2xl font-bold">${state.balance} USDC</div>
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-500">現在のAPR</div>
+              <div class="text-2xl font-bold">${state.apr}%</div>
+            </div>
+          </div>
+
+          <div class="p-4 bg-gray-50 rounded-lg flex items-center justify-between mb-4">
+            <div>
+              <div class="text-sm text-gray-500">リファラルコード</div>
+              <div class="text-xl font-mono">${state.referralCode}</div>
+            </div>
+            <button onclick="copyReferralCode()" class="p-2 hover:bg-gray-200 rounded">
+              <i data-lucide="clipboard" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <input
+                type="number"
+                placeholder="預入額 (USDC)"
+                id="depositAmount"
+                class="w-full p-2 border rounded mb-2"
+              />
+              <input
+                type="number"
+                placeholder="リファラルコード (オプション)"
+                id="referralCode"
+                class="w-full p-2 border rounded mb-2"
+              />
+              <button 
+                onclick="handleDeposit()"
+                class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
+              >
+                預け入れ
+              </button>
+            </div>
+
+            <div>
+              ${state.withdrawRequested ? `
+                <button 
+                  onclick="handleWithdraw()"
+                  class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
+                >
+                  引き出しを実行
+                </button>
+              ` : `
+                <input
+                  type="number"
+                  placeholder="引出額 (USDC)"
+                  id="withdrawAmount"
+                  class="w-full p-2 border rounded mb-2"
+                />
+                <button 
+                  onclick="handleWithdrawRequest()"
+                  class="w-full bg-blue-500 text-white rounded-lg px-4 py-2"
+                >
+                  引き出しをリクエスト
+                </button>
+              `}
+            </div>
+
+            <button 
+              onclick="handleClaim()"
+              class="w-full border border-gray-300 rounded-lg px-4 py-2"
+            >
+              報酬を請求
+            </button>
+          </div>
+        ` : `
+          <button 
+            onclick="connectWallet()"
+            class="w-full bg-blue-500 text-white rounded-lg px-4 py-2 flex items-center justify-center"
+          >
+            <i data-lucide="wallet" class="w-4 h-4 mr-2"></i>
+            ウォレットを接続
+          </button>
+        `;
+
+        document.getElementById('mainContent').innerHTML = content;
+        lucide.createIcons();
+      }
+
+      async function handleDeposit() {
+        if (!contract) return;
+        
+        const amount = document.getElementById('depositAmount').value;
+        const referralCode = document.getElementById('referralCode').value;
+        
+        try {
+          await contract.methods.depositFunds(
+            web3.utils.toWei(amount, 'mwei'),
+            referralCode || '0'
+          ).send({ from: currentAccount });
+          
+          showAlert('預け入れが完了しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('預け入れに失敗しました', 'error');
+        }
+      }
+
+      async function handleWithdrawRequest() {
+        if (!contract) return;
+        
+        const amount = document.getElementById('withdrawAmount').value;
+        
+        try {
+          await contract.methods.requestWithdrawal(
+            web3.utils.toWei(amount, 'mwei')
+          ).send({ from: currentAccount });
+          
+          state.withdrawRequested = true;
+          showAlert('引き出しリクエストを送信しました', 'success');
+          renderUI();
+        } catch (error) {
+          showAlert('リクエストに失敗しました', 'error');
+        }
+      }
+
+      async function handleWithdraw() {
+        try {
+          await contract.methods.withdraw().send({ from: currentAccount });
+          state.withdrawRequested = false;
+          showAlert('引き出しが完了しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('引き出しに失敗しました', 'error');
+        }
+      }
+
+      async function handleClaim() {
+        try {
+          await contract.methods.claimDepositReward().send({ from: currentAccount });
+          showAlert('報酬を請求しました', 'success');
+          await updateUI();
+        } catch (error) {
+          showAlert('報酬請求に失敗しました', 'error');
+        }
+      }
+
+      function copyReferralCode() {
+        navigator.clipboard.writeText(state.referralCode);
+        showAlert('コピーしました');
+      }
+
+      // 初期レンダリング
+      renderUI();
+    </script>
+  </body>
+</html>
