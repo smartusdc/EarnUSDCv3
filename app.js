@@ -1,6 +1,8 @@
+// Contract Addresses
 const CONTRACT_ADDRESS = '0x9cf81A1814D452D4f5308aA38D128ce5CAADdDE4';
 const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
+// Contract ABIs
 const CONTRACT_ABI = [
   {"inputs":[],"name":"generateReferralCode","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"referralCode","type":"uint256"}],"name":"depositFunds","outputs":[],"stateMutability":"nonpayable","type":"function"},
@@ -42,12 +44,14 @@ const USDC_ABI = [
   }
 ];
 
+// Global variables
 let web3;
 let contract;
 let usdcContract;
 let currentAccount = '';
 
-const state = {
+// Application state
+let state = {
   balance: '0',
   apr: '0',
   referralCode: '',
@@ -62,6 +66,7 @@ const state = {
   }
 };
 
+// Utility functions
 async function getBaseGasPrice() {
   try {
     const gasPrice = await web3.eth.getGasPrice();
@@ -78,6 +83,7 @@ async function initContract() {
   usdcContract = new web3.eth.Contract(USDC_ABI, USDC_ADDRESS);
 }
 
+// Core functionality
 async function connectWallet() {
   try {
     if (typeof window.ethereum === 'undefined') {
@@ -152,6 +158,7 @@ async function updateUI() {
     renderUI();
   } catch (error) {
     console.error('Update error:', error);
+    showAlert('Failed to update information', 'error');
   }
 }
 
@@ -283,4 +290,72 @@ ${window.location.href}`;
   showAlert('Referral message copied to clipboard', 'success');
 }
 
-function showAlert(message
+function showAlert(message, type = 'info') {
+  const alertDiv = document.createElement('div');
+  alertDiv.className = `alert ${
+    type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info'
+  }`;
+  alertDiv.textContent = message;
+  
+  const existingAlert = document.querySelector('.alert');
+  if (existingAlert) existingAlert.remove();
+  
+  document.getElementById('mainContent').prepend(alertDiv);
+  
+  setTimeout(() => alertDiv.remove(), 5000);
+}
+
+// UI Rendering functions
+function renderStatsSection() {
+  return `
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div class="p-4 bg-gray-50 rounded-lg">
+        <div class="text-sm text-gray-500">Deposit Balance</div>
+        <div class="text-2xl font-bold">${state.balance} USDC</div>
+      </div>
+      <div class="p-4 bg-gray-50 rounded-lg">
+        <div class="text-sm text-gray-500">Current APR</div>
+        <div class="text-2xl font-bold">${state.apr}%</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderReferralSection() {
+  return `
+    <div class="referral-section p-4 bg-gray-50 rounded-lg mb-4">
+      <h2 class="text-lg font-bold mb-2">Referral Program</h2>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-white p-4 rounded-lg">
+          <div class="text-sm text-gray-500">Your Referral Code</div>
+          <div class="flex items-center gap-2">
+            <div class="text-xl font-mono">${state.referralCode}</div>
+            <button onclick="copyReferralWithMessage()" class="copy-button" title="Copy referral message">
+              <i data-lucide="clipboard" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+        <div class="bg-white p-4 rounded-lg">
+          <div class="text-sm text-gray-500">Referral Stats</div>
+          <div>Total Referrals: ${state.referralStats.totalReferrals}</div>
+          <div class="text-sm text-gray-500 mt-2">
+            Referrer Bonus: ${state.referralStats.referrerRate}%
+            <br/>
+            Referee Bonus: ${state.referralStats.referredRate}%
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRewardsSection() {
+  return `
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div class="p-4 bg-gray-50 rounded-lg">
+        <div class="text-sm text-gray-500">Deposit Rewards</div>
+        <div class="text-2xl font-bold">${state.depositReward} USDC</div>
+        ${Number(state.depositReward) > 0 ? `
+          <button 
+            onclick="handleClaimDepositReward()"
+            class="mt-2 w-full bg-green-500 text-white rounded-lg px-
