@@ -1,0 +1,52 @@
+.copy-button {
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s;
+}
+
+.copy-button:hover {
+  background-color: rgb(229, 231, 235);
+}
+
+.alert {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.alert-success {
+  background-color: rgb(220, 252, 231);
+  color: rgb(22, 101, 52);
+}
+
+.alert-error {
+  background-color: rgb(254, 226, 226);
+  color: rgb(153, 27, 27);
+}
+
+.alert-info {
+  background-color: rgb(219, 234, 254);
+  color: rgb(29, 78, 216);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+input[type="number"] {
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
