@@ -88,37 +88,38 @@
         }
       }
 
-      async function loadReferralCode() {
-        if (!currentAccount || !contract) return;
+async function loadReferralCode() {
+  if (!currentAccount || !contract) return;
 
-        try {
-          // スマートコントラクトから既存のリファラル情報を取得
-          const userReferral = await contract.methods.userReferrals(currentAccount).call();
-          
-          if (userReferral.exists) {
-            // 既存のリファラルコードを使用
-            state.referralCode = userReferral.referralCode;
-          } else {
-            // 新規コード生成
-            const tx = await contract.methods.generateReferralCode()
-              .send({ 
-                from: currentAccount,
-                gasPrice: await getBaseGasPrice()
-              });
-            
-            const receipt = await web3.eth.getTransactionReceipt(tx.transactionHash);
-            if (receipt) {
-              const userReferral = await contract.methods.userReferrals(currentAccount).call();
-              state.referralCode = userReferral.referralCode;
-            }
-          }
-          
-          renderUI();
-        } catch (error) {
-          console.error('リファラルコード取得エラー:', error);
-          showAlert('リファラルコードの取得に失敗しました', 'error');
-        }
+  try {
+    // スマートコントラクトから既存のリファラル情報を取得
+    const userReferral = await contract.methods.userReferrals(currentAccount).call();
+    
+    if (userReferral.exists && userReferral.referralCode !== '0') {
+      // 既存のリファラルコードを使用
+      state.referralCode = userReferral.referralCode;
+      renderUI();
+    } else {
+      // 新規コード生成が必要な場合は、ユーザーに確認を求める
+      if (confirm('リファラルコードを生成する必要があります。続行しますか？')) {
+        const gasPrice = await getBaseGasPrice();
+        const tx = await contract.methods.generateReferralCode()
+          .send({ 
+            from: currentAccount,
+            gasPrice: gasPrice
+          });
+        
+        // トランザクション完了後に再度リファラル情報を取得
+        const updatedReferral = await contract.methods.userReferrals(currentAccount).call();
+        state.referralCode = updatedReferral.referralCode;
+        renderUI();
       }
+    }
+  } catch (error) {
+    console.error('リファラルコード取得エラー:', error);
+    showAlert('リファラルコードの取得に失敗しました。後でもう一度お試しください。', 'error');
+  }
+}
 
       async function connectWallet() {
         try {
