@@ -272,8 +272,7 @@ async function handleWithdrawRequest() {
     await contract.methods.requestWithdrawal(web3.utils.toWei(amount, 'mwei'))
       .send({ 
         from: currentAccount,
-        maxPriorityFeePerGas: null,
-        maxFeePerGas: null 
+gasPrice: '100000'
       });
     
     state.withdrawRequested = true;
@@ -289,8 +288,7 @@ async function handleWithdraw() {
     await contract.methods.withdraw()
       .send({ 
         from: currentAccount,
-        maxPriorityFeePerGas: null,
-        maxFeePerGas: null 
+gasPrice: '100000'
       });
     state.withdrawRequested = false;
     showAlert('引き出しが完了しました', 'success');
@@ -305,8 +303,7 @@ async function handleClaim() {
     await contract.methods.claimDepositReward()
       .send({ 
         from: currentAccount,
-        maxPriorityFeePerGas: null,
-        maxFeePerGas: null 
+gasPrice: '100000'
       });
     showAlert('報酬を請求しました', 'success');
     await updateUI();
