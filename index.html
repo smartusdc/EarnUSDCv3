@@ -232,12 +232,11 @@ async function handleDeposit() {
     // allowanceが不足している場合はapproveを実行
     if (BigInt(allowance) < BigInt(amountWei)) {
       showAlert('USDCの承認を行います...', 'info');
-      const approveTx = await usdcContract.methods.approve(CONTRACT_ADDRESS, amountWei)
-        .send({ 
-          from: currentAccount,
-          maxPriorityFeePerGas: null,
-          maxFeePerGas: null 
-        });
+const approveTx = await usdcContract.methods.approve(CONTRACT_ADDRESS, amountWei)
+  .send({ 
+    from: currentAccount,
+    gasPrice: '100000'
+  });
       
       if (!approveTx.status) {
         throw new Error('USDC承認に失敗しました');
@@ -246,12 +245,11 @@ async function handleDeposit() {
 
     // 預け入れを実行
     showAlert('預け入れを実行中...', 'info');
-    const depositTx = await contract.methods.depositFunds(amountWei, referralCode || '0')
-      .send({ 
-        from: currentAccount,
-        maxPriorityFeePerGas: null,
-        maxFeePerGas: null
-      });
+const depositTx = await contract.methods.depositFunds(amountWei, referralCode || '0')
+  .send({ 
+    from: currentAccount,
+    gasPrice: '100000'
+  });
 
     if (depositTx.status) {
       showAlert('預け入れが完了しました', 'success');
